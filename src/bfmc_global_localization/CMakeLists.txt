@@ -10,8 +10,6 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(robot_localization REQUIRED)
-
 add_executable(sign_localization_node src/sign_localization_node.cpp)
 ament_target_dependencies(sign_localization_node
   rclcpp

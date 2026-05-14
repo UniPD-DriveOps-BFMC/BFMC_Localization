@@ -4,6 +4,16 @@ Full localization stack for the Bosch Future Mobility Challenge competition car.
 
 ---
 
+## Prerequisites (Jetson host — run once)
+
+```bash
+sudo apt install ros-jazzy-robot-localization
+```
+
+`robot_localization` provides the `ekf_node` binary used by `bfmc_odometry_fusion` and `bfmc_global_localization` at runtime. It is not a compile-time dependency so the Docker build does not need it installed.
+
+---
+
 ## Package Overview
 
 | # | Package | Output topics |
@@ -38,29 +48,32 @@ Run this once before each Docker build session whenever packages change:
 
 ```bash
 rsync -av --delete \
-  ~/ros2_workspaces/BFMC_Localization/src/automobile_imu \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_car_description \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_isaac_visual_odom \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_state_odometry \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_odometry_fusion \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_gps_position \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_map_matching \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_global_localization \
-  ~/workspaces/isaac_ros-dev/src/
+  ~/workspaces/BFMC_Localization/src/automobile_imu \
+  ~/workspaces/BFMC_Localization/src/bfmc_car_description \
+  ~/workspaces/BFMC_Localization/src/bfmc_isaac_visual_odom \
+  ~/workspaces/BFMC_Localization/src/bfmc_state_odometry \
+  ~/workspaces/BFMC_Localization/src/bfmc_odometry_fusion \
+  ~/workspaces/BFMC_Localization/src/bfmc_gps_position \
+  ~/workspaces/BFMC_Localization/src/bfmc_map_matching \
+  ~/workspaces/BFMC_Localization/src/bfmc_global_localization \
+  ~/workspaces/isaac_ros-dev/src/ && \
+rsync -av --delete \
+  ~/workspaces/BFMC_Localization/docker/ \
+  ~/workspaces/isaac_ros-dev/docker/
 ```
 
 Preview without copying (dry run):
 
 ```bash
 rsync -avn --delete \
-  ~/ros2_workspaces/BFMC_Localization/src/automobile_imu \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_car_description \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_isaac_visual_odom \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_state_odometry \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_odometry_fusion \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_gps_position \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_map_matching \
-  ~/ros2_workspaces/BFMC_Localization/src/bfmc_global_localization \
+  ~/workspaces/BFMC_Localization/src/automobile_imu \
+  ~/workspaces/BFMC_Localization/src/bfmc_car_description \
+  ~/workspaces/BFMC_Localization/src/bfmc_isaac_visual_odom \
+  ~/workspaces/BFMC_Localization/src/bfmc_state_odometry \
+  ~/workspaces/BFMC_Localization/src/bfmc_odometry_fusion \
+  ~/workspaces/BFMC_Localization/src/bfmc_gps_position \
+  ~/workspaces/BFMC_Localization/src/bfmc_map_matching \
+  ~/workspaces/BFMC_Localization/src/bfmc_global_localization \
   ~/workspaces/isaac_ros-dev/src/
 ```
 
@@ -70,7 +83,8 @@ One-shot sync script (save once, run any time):
 cat > ~/sync_bfmc_to_isaac.sh <<'EOF'
 #!/bin/bash
 set -e
-SRC="$HOME/ros2_workspaces/BFMC_Localization/src"
+SRC="$HOME/workspaces/BFMC_Localization/src"
+WS="$HOME/workspaces/BFMC_Localization"
 DST="$HOME/workspaces/isaac_ros-dev/src"
 rsync -av --delete \
   "$SRC/automobile_imu" \
@@ -82,6 +96,7 @@ rsync -av --delete \
   "$SRC/bfmc_map_matching" \
   "$SRC/bfmc_global_localization" \
   "$DST/"
+rsync -av --delete "$WS/docker/" "$HOME/workspaces/isaac_ros-dev/docker/"
 echo "Sync complete."
 EOF
 chmod +x ~/sync_bfmc_to_isaac.sh
@@ -95,6 +110,46 @@ Then later:
 
 ---
 
+## Permanent Docker Dependencies (run once on Jetson)
+
+All apt/pip dependencies are baked into a custom Docker image layer so they
+survive container restarts. This only needs to be set up once, then every
+`run_dev.sh` automatically uses the pre-built image.
+
+**Step 1 — copy the config file into the Isaac ROS workspace:**
+
+```bash
+cat > ~/workspaces/isaac_ros-dev/.isaac_ros_common-config <<'EOF'
+CONFIG_IMAGE_KEY="ros2_humble.bfmc"
+CONFIG_DOCKER_SEARCH_DIRS=("$HOME/workspaces/isaac_ros-dev/docker")
+EOF
+```
+
+**Step 2 — sync the BFMC workspace (includes the Dockerfile):**
+
+```bash
+~/sync_bfmc_to_isaac.sh
+```
+
+**Step 3 — rebuild the Docker image (takes a few minutes, only needed when `Dockerfile.bfmc` changes):**
+
+```bash
+cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
+./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
+```
+
+`run_dev.sh` detects the new config, builds a new image layer with all dependencies installed, and drops you into a container. Subsequent runs reuse the cached image — no rebuild unless the Dockerfile changes.
+
+**What gets installed permanently:**
+
+| Dependency | Why |
+|------------|-----|
+| `ros-humble-robot-localization` | `ekf_node` binary for local and global EKF |
+| `i2c-tools` | I2C bus debugging (`i2cdetect`) |
+| `smbus2` (pip) | BNO055 IMU driver (`automobile_imu`) |
+
+---
+
 ## Enter the Isaac ROS Docker Container
 
 ```bash
@@ -102,11 +157,27 @@ cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
 ./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
 ```
 
-Open an extra terminal into the same container:
+Grant I2C access inside the container (needed for BNO055 IMU):
+
+```bash
+sudo chmod 666 /dev/i2c-7
+```
+
+Verify the IMU is detected:
+
+```bash
+i2cdetect -y -r 7
+# Expected: device at 0x28
+```
+
+Open an extra terminal into the same running container:
 
 ```bash
 docker ps
 docker exec -it --user admin <container_name> bash
+cd /workspaces/isaac_ros-dev
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ```
 
 Inside every container terminal:
@@ -162,7 +233,7 @@ ros2 pkg list | grep bfmc
 ## Build on Jetson Host (non-Isaac packages only)
 
 ```bash
-cd ~/ros2_workspaces/BFMC_Localization
+cd ~/workspaces/BFMC_Localization
 source /opt/ros/jazzy/setup.bash
 
 colcon build --symlink-install \
@@ -186,7 +257,7 @@ Source in every new terminal (Jazzy host):
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source ~/ros2_workspaces/BFMC_Localization/install/setup.bash
+source ~/workspaces/BFMC_Localization/install/setup.bash
 ```
 
 Or use the master launch file to start everything at once — see [Master Launch](#master-launch) below.
@@ -354,7 +425,7 @@ Starts all packages in order with a single command (Jazzy host, no Docker — Is
 
 ```bash
 # Show all arguments
-ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py --show-args
+ros2 launch ~/workspaces/BFMC_Localization/src/bfmc_localization.launch.py --show-args
 ```
 
 | Argument | Default | Options | Description |
@@ -364,16 +435,16 @@ ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py 
 
 ```bash
 # Default — GPS on, stereo camera
-ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py
+ros2 launch ~/workspaces/BFMC_Localization/src/bfmc_localization.launch.py
 
 # GPS off
-ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py use_gps:=false
+ros2 launch ~/workspaces/BFMC_Localization/src/bfmc_localization.launch.py use_gps:=false
 
 # RGBD camera
-ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py camera_mode:=rgbd
+ros2 launch ~/workspaces/BFMC_Localization/src/bfmc_localization.launch.py camera_mode:=rgbd
 
 # GPS off + RGBD
-ros2 launch ~/ros2_workspaces/BFMC_Localization/src/bfmc_localization.launch.py use_gps:=false camera_mode:=rgbd
+ros2 launch ~/workspaces/BFMC_Localization/src/bfmc_localization.launch.py use_gps:=false camera_mode:=rgbd
 ```
 
 ---

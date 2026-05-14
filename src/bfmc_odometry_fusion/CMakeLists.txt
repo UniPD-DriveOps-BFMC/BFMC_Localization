@@ -11,8 +11,6 @@ find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(robot_localization REQUIRED)
-
 add_executable(odom_stats_node src/odom_stats_node.cpp)
 ament_target_dependencies(odom_stats_node rclcpp nav_msgs std_msgs)
 
