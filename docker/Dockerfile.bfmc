@@ -1,8 +1,43 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-robot-localization \
+    ros-humble-tf2-tools \
+    ros-humble-rqt-graph \
+    ros-humble-xacro \
+    ros-humble-joint-state-publisher \
+    ros-humble-joint-state-publisher-gui \
+    ros-humble-robot-state-publisher \
+    ros-humble-image-transport \
+    ros-humble-cv-bridge \
+    ros-humble-vision-opencv \
+    ros-humble-depthai-ros \
+    ros-humble-depthai-bridge \
+    ros-humble-depthai-descriptions \
+    ros-humble-depthai-examples \
     i2c-tools \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir smbus2
+    python3-pip \
+    python3-smbus \
+    python3-dev \
+    python3-numpy \
+    python3-opencv \
+    git \
+    cmake \
+    build-essential \
+    nlohmann-json3-dev \
+    libyaml-cpp-dev \
+    libopencv-dev \
+    v4l-utils \
+    usbutils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enum && \
+    cmake -S /tmp/magic_enum -B /tmp/magic_enum/build -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake --build /tmp/magic_enum/build --target install && \
+    ln -sf /usr/local/include/magic_enum/magic_enum.hpp /usr/local/include/magic_enum.hpp && \
+    rm -rf /tmp/magic_enum
+
+RUN pip3 install --no-cache-dir smbus2

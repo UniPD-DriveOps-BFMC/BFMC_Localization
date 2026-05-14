@@ -45,7 +45,7 @@ public:
       create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(base_pose_topic_, 10);
 
     tag_pose_sub_ =
-      create_subscription<bfmc_interfaces::msg::GpsTagPose>(
+      create_subscription<bfmc_gps_position::msg::GpsTagPose>(
         tag_pose_topic_, 10,
         std::bind(&GpsTagToBaseNode::tagPoseCallback, this, std::placeholders::_1));
 
@@ -117,7 +117,7 @@ private:
     return stddev * stddev;
   }
 
-  void tagPoseCallback(const bfmc_interfaces::msg::GpsTagPose::SharedPtr msg)
+  void tagPoseCallback(const bfmc_gps_position::msg::GpsTagPose::SharedPtr msg)
   {
     if (msg->quality < min_quality_) {
       RCLCPP_DEBUG(get_logger(), "GPS quality too low (%d < %d), skipping", msg->quality, min_quality_);
@@ -190,7 +190,7 @@ private:
   tf2_ros::TransformListener tf_listener_;
 
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr base_pose_pub_;
-  rclcpp::Subscription<bfmc_interfaces::msg::GpsTagPose>::SharedPtr tag_pose_sub_;
+  rclcpp::Subscription<bfmc_gps_position::msg::GpsTagPose>::SharedPtr tag_pose_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr local_odom_sub_;
 };
 
