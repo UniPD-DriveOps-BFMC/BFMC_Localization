@@ -2,117 +2,176 @@
 
 ROS 2 localization stack for the Bosch Future Mobility Challenge autonomous vehicle platform.
 
-This workspace is intended to run mainly inside the Isaac ROS Docker environment on the Jetson Orin Nano. The Isaac ROS container uses ROS 2 Humble. Host-side ROS 2 Jazzy is optional and should not be mixed with the Docker Humble environment unless you explicitly know the DDS compatibility constraints.
-
----
-
-## Recommended Workflow Summary
-
-Use this workflow for normal development:
-
-1. Edit packages in the host workspace:
-   
-   ```bash
-   ~/workspaces/BFMC_Localization
-   ```
-
-2. Sync the packages into the Isaac ROS workspace:
-   
-   ```bash
-   ~/sync_bfmc_to_isaac.sh
-   ```
-
-3. Enter the Isaac ROS Docker container with privileged device access:
-   
-   ```bash
-   cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
-   ./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
-   ```
-
-4. Inside Docker, source ROS and the workspace:
-   
-   ```bash
-   cd /workspaces/isaac_ros-dev
-   source /opt/ros/humble/setup.bash
-   source install/setup.bash
-   ```
-
-5. Give temporary I2C permission for the BNO055 IMU:
-   
-   ```bash
-   sudo chmod 666 /dev/i2c-7
-   ```
-
-6. Build and run the localization packages.
+This workspace runs inside the **Isaac ROS Docker container** (ROS 2 Humble) on the **Jetson Orin Nano**. The host-side ROS 2 Jazzy installation should not be mixed with the Docker Humble environment.
 
 ---
 
 ## Package Overview
 
-| #   | Package                    | Main output topics / function                                                                                  |
-| --- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 0   | `automobile_imu`           | `/automobile/imu/data`                                                                                         |
-| 1   | `bfmc_car_description`     | robot TF frames: `base_link`, `imu_link`, `oak_*`, `gps_tag_link`                                              |
-| 2   | `bfmc_isaac_visual_odom`   | `/visual_odom`, `/visual_odom_planar`                                                                          |
-| 3   | `bfmc_state_odometry`      | `/encoder_odom`, processed odometry inputs                                                                     |
-| 4   | `bfmc_odometry_fusion`     | `/odometry/local`, `/odom_distance`, `/odom_velocity`                                                          |
-| 5   | `bfmc_gps_position`        | `/automobile/gps/base_pose`                                                                                    |
-| 6   | `bfmc_map_matching`        | `/automobile/map_match/base_pose`, `/automobile/map_match/lane_mask`                                           |
-| 7   | `bfmc_global_localization` | `/odometry/global`, `/automobile/current_coordinate`, `/automobile/current_node`, `/automobile/sign/base_pose` |
+| # | Package | Output topics |
+|---|---------|---------------|
+| 0 | `automobile_imu` | `/automobile/imu/data` |
+| 1 | `bfmc_car_description` | TF frames: `base_link`, `imu_link`, `oak_*`, `gps_tag_link` |
+| 2 | `bfmc_isaac_visual_odom` | `/visual_odom`, `/visual_odom_planar` |
+| 3 | `bfmc_state_odometry` | `/encoder_odom` |
+| 4 | `bfmc_odometry_fusion` | `/odometry/local`, `/odom_distance`, `/odom_velocity` |
+| 5 | `bfmc_gps_position` | `/automobile/gps/base_pose` |
+| 6 | `bfmc_map_matching` | `/automobile/map_match/base_pose`, `/automobile/map_match/lane_mask` |
+| 7 | `bfmc_global_localization` | `/odometry/global`, `/automobile/current_coordinate`, `/automobile/current_node`, `/automobile/sign/base_pose` |
 
 ---
 
 ## TF Tree
 
-Expected high-level TF structure:
-
 ```text
 map
- └── odom                # published by global EKF: bfmc_global_localization
-      └── base_link      # published by local EKF: bfmc_odometry_fusion
+ └── odom                   ← global EKF (bfmc_global_localization)
+      └── base_link          ← local EKF (bfmc_odometry_fusion)
            ├── imu_link
-           ├── oak_left_camera_optical_frame
-           ├── oak_right_camera_optical_frame
-           └── gps_tag_link
+           ├── gps_tag_link
+           └── oak-d-base_frame
+                ├── oak_left_camera_optical_frame
+                └── oak_right_camera_optical_frame
 ```
-
-The BNO055 IMU publisher uses `imu_link` as the `header.frame_id`, so `bfmc_car_description` must publish a fixed transform from `base_link` to `imu_link`.
 
 ---
 
-## One-Time Docker Setup
-
-The custom BFMC Docker layer installs permanent dependencies such as `robot_localization`, `i2c-tools`, `smbus2`, and `magic_enum`. These dependencies persist in the built Docker image. Runtime permissions such as `chmod 666 /dev/i2c-7` must still be applied again when a new container is created.
-
-### 1. Create Isaac ROS config on the Jetson host
-
-Run on the Jetson host, not inside Docker:
-
-```bash
-cat > ~/.isaac_ros_common-config <<'CONFIGEOF'
-CONFIG_IMAGE_KEY="ros2_humble.bfmc"
-CONFIG_DOCKER_SEARCH_DIRS=("$HOME/workspaces/isaac_ros-dev/docker")
-CONFIGEOF
-```
-
-This should make `run_dev.sh` use the image key:
+## Topic Pipeline
 
 ```text
-aarch64.ros2_humble.bfmc
+Hardware                   Package                    Output
+─────────────────────────────────────────────────────────────────────────────
+Encoder + IMU  ──────────► bfmc_state_odometry    ──► /encoder_odom
+                                                   ──► /car/imu/data
+
+OAK-D camera   ──────────► bfmc_isaac_visual_odom ──► /visual_odom_planar
+
+/encoder_odom ┐
+/car/imu/data ├────────────► bfmc_odometry_fusion ──► /odometry/local
+/visual_odom_planar ┘
+
+/automobile/gps/tag_pose ──► bfmc_gps_position    ──► /automobile/gps/base_pose
+/oak/rgb/image_raw ─────────► bfmc_map_matching   ──► /automobile/map_match/base_pose
+
+/odometry/local ┐
+/automobile/gps/base_pose ├─► bfmc_global_localization ──► /odometry/global
+/automobile/map_match/... ┘                              ──► /automobile/current_coordinate
 ```
 
-### 2. Create the BFMC Dockerfile
+### Per-package topic details
 
-Create:
+#### `bfmc_state_odometry`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/automobile/encoder/speed` | `std_msgs/Float32` |
+| SUB | `/automobile/encoder/distance` | `std_msgs/Float32` |
+| SUB | `/automobile/IMU` | `sensor_msgs/Imu` |
+| PUB | `/encoder_odom` | `nav_msgs/Odometry` |
+| PUB | `/car/imu/data` | `sensor_msgs/Imu` |
+
+#### `bfmc_isaac_visual_odom`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/oak/left/image_mono` + `/oak/right/image_mono` *(stereo)* | `sensor_msgs/Image` |
+| SUB | `/oak/rgb/image_rect` + `/oak/stereo/image_raw` *(rgbd)* | `sensor_msgs/Image` |
+| SUB | `/oak/imu/data` | `sensor_msgs/Imu` |
+| PUB | `/visual_odom` | `nav_msgs/Odometry` |
+| PUB | `/visual_odom_planar` | `nav_msgs/Odometry` |
+
+#### `bfmc_odometry_fusion`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/encoder_odom` | `nav_msgs/Odometry` |
+| SUB | `/car/imu/data` | `sensor_msgs/Imu` |
+| SUB | `/visual_odom_planar` | `nav_msgs/Odometry` |
+| PUB | `/odometry/local` | `nav_msgs/Odometry` |
+| PUB | `/odom_distance` | `std_msgs/Float32` |
+| PUB | `/odom_velocity` | `std_msgs/Float32` |
+
+#### `bfmc_gps_position`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/automobile/gps/tag_pose` | `bfmc_gps_position/GpsTagPose` |
+| SUB | `/odometry/local` | `nav_msgs/Odometry` |
+| PUB | `/automobile/gps/base_pose` | `geometry_msgs/PoseWithCovarianceStamped` |
+
+#### `bfmc_map_matching`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/oak/rgb/image_raw` | `sensor_msgs/Image` |
+| SUB | `/oak/rgb/camera_info` | `sensor_msgs/CameraInfo` |
+| SUB | `/odometry/local` | `nav_msgs/Odometry` |
+| PUB | `/automobile/map_match/base_pose` | `geometry_msgs/PoseWithCovarianceStamped` |
+| PUB | `/automobile/map_match/lane_mask` | `sensor_msgs/Image` |
+
+#### `bfmc_global_localization`
+| Dir | Topic | Type |
+|-----|-------|------|
+| SUB | `/odometry/local` | `nav_msgs/Odometry` |
+| SUB | `/automobile/gps/base_pose` | `geometry_msgs/PoseWithCovarianceStamped` |
+| SUB | `/automobile/map_match/base_pose` | `geometry_msgs/PoseWithCovarianceStamped` |
+| PUB | `/odometry/global` | `nav_msgs/Odometry` |
+| PUB | `/automobile/current_coordinate` | `geometry_msgs/PoseStamped` |
+| PUB | `/automobile/current_node` | `std_msgs/Int32` |
+| PUB | `/automobile/sign/base_pose` | `geometry_msgs/PoseWithCovarianceStamped` |
+
+---
+
+## 1. Install Isaac ROS on Jetson (first time only)
+
+### 1.1 Fix host GPU access
 
 ```bash
-mkdir -p ~/workspaces/BFMC_Localization/docker
-nano ~/workspaces/BFMC_Localization/docker/Dockerfile.bfmc
+nvidia-smi
 ```
 
-Use this Dockerfile:
+If it fails, fix the NVIDIA driver first. Then:
 
-```dockerfile
+```bash
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Test:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+```
+
+### 1.2 Clone isaac_ros_common with Git LFS
+
+```bash
+sudo apt install -y git-lfs
+git lfs install
+
+mkdir -p ~/workspaces/isaac_ros-dev/src
+cd ~/workspaces/isaac_ros-dev/src
+
+git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git
+cd isaac_ros_common
+git lfs pull
+```
+
+### 1.3 Create the Isaac ROS config
+
+Tells `run_dev.sh` to include the BFMC custom Docker layer:
+
+```bash
+cat > ~/.isaac_ros_common-config <<'EOF'
+CONFIG_IMAGE_KEY="ros2_humble.bfmc"
+CONFIG_DOCKER_SEARCH_DIRS=("$HOME/workspaces/isaac_ros-dev/docker")
+EOF
+```
+
+Expected image key after this: `aarch64.ros2_humble.bfmc`
+
+### 1.4 Create the BFMC Dockerfile
+
+```bash
+mkdir -p ~/workspaces/isaac_ros-dev/docker
+cat > ~/workspaces/isaac_ros-dev/docker/Dockerfile.bfmc <<'EOF'
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
@@ -139,14 +198,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-numpy \
     python3-opencv \
-    git \
-    cmake \
-    build-essential \
+    git cmake build-essential \
     nlohmann-json3-dev \
     libyaml-cpp-dev \
     libopencv-dev \
-    v4l-utils \
-    usbutils \
+    v4l-utils usbutils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enum && \
@@ -155,16 +211,17 @@ RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enu
     rm -rf /tmp/magic_enum
 
 RUN pip3 install --no-cache-dir smbus2
+EOF
 ```
 
-`magic_enum` is installed from source because `libmagic-enum-dev` is not available in the Jetson Ubuntu repositories used by the Isaac ROS image.
+> `magic_enum` is built from source because `libmagic-enum-dev` is not in the Jetson apt repositories. It is required by the Isaac GXF packages.
 
-### 3. Sync Dockerfile and packages to Isaac workspace
+### 1.5 Create the sync script
 
-Create the sync script once:
+Creates `~/sync_bfmc_to_isaac.sh` which you run after every `git pull`:
 
 ```bash
-cat > ~/sync_bfmc_to_isaac.sh <<'SYNCEOF'
+cat > ~/sync_bfmc_to_isaac.sh <<'EOF'
 #!/bin/bash
 set -e
 
@@ -173,8 +230,7 @@ WS="$HOME/workspaces/BFMC_Localization"
 DST="$HOME/workspaces/isaac_ros-dev/src"
 DOCKER_DST="$HOME/workspaces/isaac_ros-dev/docker"
 
-mkdir -p "$DST"
-mkdir -p "$DOCKER_DST"
+mkdir -p "$DST" "$DOCKER_DST"
 
 rsync -av --delete \
   "$SRC/automobile_imu" \
@@ -190,20 +246,27 @@ rsync -av --delete \
 rsync -av --delete "$WS/docker/" "$DOCKER_DST/"
 
 echo "Sync complete."
-SYNCEOF
+EOF
 
 chmod +x ~/sync_bfmc_to_isaac.sh
 ```
 
-Then run it whenever the BFMC packages or Dockerfile change:
+---
+
+## 2. First Time Compiling (inside Docker)
+
+### 2.1 Pull packages and sync
+
+On the Jetson host (outside Docker):
 
 ```bash
+cd ~/workspaces/BFMC_Localization
+git pull
+
 ~/sync_bfmc_to_isaac.sh
 ```
 
-### 4. Build/re-enter the custom Docker container
-
-Run on the Jetson host:
+### 2.2 Enter Docker (builds the custom image on first run)
 
 ```bash
 cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
@@ -217,108 +280,31 @@ Launching Isaac ROS Dev container with image key aarch64.ros2_humble.bfmc
 Resolved ... Dockerfile.bfmc
 ```
 
-If the log shows only `aarch64.ros2_humble`, then the custom BFMC Docker layer is not being used.
+If you only see `aarch64.ros2_humble`, the BFMC Docker layer is not being picked up — check `~/.isaac_ros_common-config` and the docker search dir.
 
----
-
-## Enter Existing Docker Container from Another Terminal
-
-From another host terminal:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-```
-
-Then enter the running container:
-
-```bash
-docker exec -it --user admin <container_name> bash
-```
-
-Inside the container:
-
-```bash
-cd /workspaces/isaac_ros-dev
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-```
-
----
-
-## IMU Hardware Verification
-
-Inside Docker:
-
-```bash
-ls -l /dev/i2c*
-sudo chmod 666 /dev/i2c-7
-i2cdetect -y -r 7
-```
-
-Expected BNO055 detection:
-
-```text
-20: -- -- -- -- -- -- -- -- 28 -- -- -- -- -- -- --
-```
-
-If `i2cdetect` is not found, your BFMC Dockerfile was not included in the image, or the image was not rebuilt after adding `i2c-tools`.
-
----
-
-## Build Inside Docker
-
-Always source ROS first:
+### 2.3 Source ROS inside Docker
 
 ```bash
 cd /workspaces/isaac_ros-dev
 source /opt/ros/humble/setup.bash
 ```
 
-### Option A — Build BFMC packages except Isaac visual odometry
+### 2.4 Build Isaac Visual SLAM dependencies
 
-Use this when you only need IMU, TF, encoder odometry, GPS, map matching, and EKF localization:
-
-```bash
-colcon build --symlink-install \
-  --packages-select \
-    automobile_imu \
-    bfmc_car_description \
-    bfmc_state_odometry \
-    bfmc_odometry_fusion \
-    bfmc_gps_position \
-    bfmc_map_matching \
-    bfmc_global_localization
-
-source install/setup.bash
-```
-
-This avoids Isaac Visual SLAM dependencies.
-
-### Option B — Build NVIDIA Isaac Visual SLAM dependencies
-
-Use this only when `bfmc_isaac_visual_odom` is needed:
+This must complete successfully before building the BFMC packages. Takes ~10 minutes on first run.
 
 ```bash
-cd /workspaces/isaac_ros-dev
-source /opt/ros/humble/setup.bash
-
 colcon build --symlink-install \
   --packages-up-to isaac_ros_visual_slam
 
 source install/setup.bash
 ```
 
-If the build fails at `gxf_isaac_image_flip` with `magic_enum::magic_enum` not found, verify that the BFMC Dockerfile installed `magic_enum` from source.
+> If this fails at `gxf_isaac_image_flip` with `magic_enum::magic_enum not found`, the BFMC Dockerfile was not applied — check that the image key is `aarch64.ros2_humble.bfmc`.
 
-### Option C — Build all BFMC localization packages including Isaac visual odometry
-
-Run this after Option B succeeds:
+### 2.5 Build all BFMC localization packages
 
 ```bash
-cd /workspaces/isaac_ros-dev
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
 colcon build --symlink-install \
   --packages-select \
     automobile_imu \
@@ -328,14 +314,19 @@ colcon build --symlink-install \
     bfmc_odometry_fusion \
     bfmc_gps_position \
     bfmc_map_matching \
-    bfmc_global_localization
+    bfmc_global_localization \
+  --cmake-args -DBUILD_TESTING=OFF
 
 source install/setup.bash
 ```
 
-### Clean rebuild of BFMC packages
+### 2.6 Verify
 
-Use only when package build state is inconsistent:
+```bash
+ros2 pkg list | grep -E "automobile_imu|bfmc"
+```
+
+### Clean rebuild (when build state is inconsistent)
 
 ```bash
 cd /workspaces/isaac_ros-dev
@@ -351,19 +342,36 @@ rm -rf \
   build/bfmc_global_localization install/bfmc_global_localization
 ```
 
-Then rebuild using Option A or Option C.
-
-Verify installed packages:
-
-```bash
-ros2 pkg list | grep -E "automobile_imu|bfmc"
-```
+Then repeat steps 2.4 and 2.5.
 
 ---
 
-## Runtime Setup in Every Docker Terminal
+## 3. Daily Workflow
 
-Inside every new Docker terminal:
+### 3.1 Pull and sync (on Jetson host)
+
+```bash
+cd ~/workspaces/BFMC_Localization
+git pull
+
+~/sync_bfmc_to_isaac.sh
+```
+
+### 3.2 Enter Docker
+
+```bash
+cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
+./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
+```
+
+To open a second terminal into the same running container:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+docker exec -it --user admin <container_name> bash
+```
+
+### 3.3 Source ROS (every terminal)
 
 ```bash
 cd /workspaces/isaac_ros-dev
@@ -371,208 +379,130 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 ```
 
-If the terminal will access the BNO055 IMU:
+### 3.4 IMU hardware permission
+
+Required once per container session, in the terminal that will run the IMU node:
 
 ```bash
 sudo chmod 666 /dev/i2c-7
 ```
 
----
+Verify BNO055 is detected:
 
-## Run the Full Stack Manually
+```bash
+i2cdetect -y -r 7
+# Expected:  20: -- -- -- -- -- -- -- -- 28 -- -- -- -- -- -- --
+```
 
-### Step 0 — BNO055 IMU driver
+### 3.5 Rebuild changed packages
 
-Reads the BNO055 over I2C and publishes `sensor_msgs/msg/Imu`:
+Isaac SLAM dependencies are already built — only rebuild the BFMC packages that changed:
 
+```bash
+colcon build --symlink-install \
+  --packages-select \
+    automobile_imu \
+    bfmc_car_description \
+    bfmc_isaac_visual_odom \
+    bfmc_state_odometry \
+    bfmc_odometry_fusion \
+    bfmc_gps_position \
+    bfmc_map_matching \
+    bfmc_global_localization \
+  --cmake-args -DBUILD_TESTING=OFF
+
+source install/setup.bash
+```
+
+To rebuild only one specific package:
+
+```bash
+colcon build --symlink-install \
+  --packages-select <package_name> \
+  --cmake-args -DBUILD_TESTING=OFF
+
+source install/setup.bash
+```
+
+### 3.6 Run the full stack — master launch
+
+Runs all packages in dependency order (TF tree, IMU, visual odom, EKF, GPS, map matching, global localization):
+
+```bash
+ros2 launch bfmc_global_localization bfmc_localization.launch.py
+```
+
+| Argument | Default | Options | Description |
+|----------|---------|---------|-------------|
+| `use_gps` | `true` | `true` / `false` | Enable GPS fusion |
+| `camera_mode` | `stereo` | `stereo` / `rgbd` | Visual odometry camera mode |
+
+```bash
+# No GPS
+ros2 launch bfmc_global_localization bfmc_localization.launch.py use_gps:=false
+
+# RGBD camera
+ros2 launch bfmc_global_localization bfmc_localization.launch.py camera_mode:=rgbd
+
+# No GPS + RGBD
+ros2 launch bfmc_global_localization bfmc_localization.launch.py use_gps:=false camera_mode:=rgbd
+```
+
+### 3.7 Run packages individually (manual order)
+
+#### IMU driver
 ```bash
 ros2 run automobile_imu bno055_imu_node
 ```
 
-Check from another Docker terminal:
-
-```bash
-ros2 topic hz /automobile/imu/data
-ros2 topic echo /automobile/imu/data --once
-```
-
-### Step 1 — Robot TF tree
-
+#### TF tree
 ```bash
 ros2 launch bfmc_car_description robot_state_publisher.launch.py
 ```
 
-Check:
-
-```bash
-ros2 run tf2_ros tf2_echo base_link imu_link
-ros2 run tf2_ros tf2_echo base_link oak_left_camera_optical_frame
-ros2 run tf2_ros tf2_echo base_link gps_tag_link
-```
-
-### Step 2 — OAK camera driver
-
-Start your DepthAI/depthai-ros launch. After it starts, check:
-
-```bash
-ros2 topic hz /oak/left/image_mono
-ros2 topic hz /oak/right/image_mono
-ros2 topic hz /oak/rgb/image_raw
-ros2 topic hz /oak/imu
-```
-
-### Step 3 — Isaac Visual Odometry
-
-Only run this if Isaac Visual SLAM dependencies were built successfully.
-
+#### Isaac Visual Odometry
 ```bash
 ros2 launch bfmc_isaac_visual_odom isaac_visual_odom_stereo.launch.py
-```
-
-Alternative RGBD mode:
-
-```bash
+# or
 ros2 launch bfmc_isaac_visual_odom isaac_visual_odom_rgbd.launch.py
 ```
 
-Check:
-
-```bash
-ros2 topic hz /visual_odom_planar
-ros2 topic echo /visual_odom_planar --once
-```
-
-### Step 4 — Encoder odometry / state odometry
-
+#### Encoder + state odometry
 ```bash
 ros2 launch bfmc_state_odometry state_odometry.launch.py
 ```
 
-Check:
-
-```bash
-ros2 topic echo /encoder_odom --once
-ros2 topic echo /automobile/imu/data --once
-```
-
-### Step 5 — Local EKF fusion
-
-Fuses visual odometry, encoder odometry, and IMU data into local odometry.
-
+#### Local EKF fusion
 ```bash
 ros2 launch bfmc_odometry_fusion local_ekf.launch.py
 ```
 
-Check:
-
-```bash
-ros2 topic echo /odometry/local --once
-ros2 topic hz /odometry/local
-ros2 topic echo /odom_distance --once
-ros2 topic echo /odom_velocity --once
-```
-
-### Step 6 — GPS position
-
-Converts raw GPS tag pose to corrected base-link pose with covariance.
-
+#### GPS position
 ```bash
 ros2 launch bfmc_gps_position gps_position.launch.py
 ```
 
-Check:
-
-```bash
-ros2 topic echo /automobile/gps/base_pose --once
-```
-
-### Step 7 — Map matching
-
-Matches camera/lane observations against the track map and publishes a global pose correction.
-
+#### Map matching
 ```bash
 ros2 launch bfmc_map_matching rgb_map_matching.launch.py
 ```
 
-Check:
-
-```bash
-ros2 topic hz /automobile/map_match/lane_mask
-ros2 topic echo /automobile/map_match/base_pose --once
-```
-
-### Step 8 — Global localization
-
-Fuses local odometry, GPS, map matching, and sign detections into global localization.
-
+#### Global localization
 ```bash
 ros2 launch bfmc_global_localization global_ekf.launch.py
-```
-
-Without GPS:
-
-```bash
+# or without GPS:
 ros2 launch bfmc_global_localization global_ekf.launch.py use_gps:=false
 ```
 
-Check:
+### 3.8 Verify topics and TF
 
-```bash
-ros2 topic echo /odometry/global --once
-ros2 topic echo /automobile/current_coordinate --once
-ros2 topic echo /automobile/current_node --once
-ros2 topic echo /automobile/sign/base_pose --once
-```
-
----
-
-## Master Launch
-
-Use this only if a package named `bfmc_localization` exists and installs the master launch file.
-
-Show launch arguments:
-
-```bash
-ros2 launch bfmc_localization bfmc_localization.launch.py --show-args
-```
-
-Run default configuration:
-
-```bash
-ros2 launch bfmc_localization bfmc_localization.launch.py
-```
-
-Run without GPS:
-
-```bash
-ros2 launch bfmc_localization bfmc_localization.launch.py use_gps:=false
-```
-
-Run RGBD visual odometry mode:
-
-```bash
-ros2 launch bfmc_localization bfmc_localization.launch.py camera_mode:=rgbd
-```
-
-Run without GPS and with RGBD:
-
-```bash
-ros2 launch bfmc_localization bfmc_localization.launch.py use_gps:=false camera_mode:=rgbd
-```
-
-If no `bfmc_localization` package exists, run the stack manually using the steps above.
-
----
-
-## Final Output Verification
-
-List relevant topics:
+Check all localization topics:
 
 ```bash
 ros2 topic list | grep -E "imu|visual|odom|gps|map_match|sign|current"
 ```
 
-Expected active topics, depending on which modules are running:
+Expected active topics:
 
 ```text
 /automobile/imu/data
@@ -591,13 +521,6 @@ Expected active topics, depending on which modules are running:
 /automobile/current_node
 ```
 
-Check TF tree and ROS graph:
-
-```bash
-ros2 run tf2_tools view_frames
-ros2 run rqt_graph rqt_graph
-```
-
 Check publish rates:
 
 ```bash
@@ -607,23 +530,143 @@ ros2 topic hz /odometry/global
 ros2 topic hz /automobile/current_coordinate
 ```
 
+Check TF frames:
+
+```bash
+ros2 run tf2_ros tf2_echo base_link imu_link
+ros2 run tf2_ros tf2_echo base_link gps_tag_link
+ros2 run tf2_ros tf2_echo base_link oak_left_camera_optical_frame
+ros2 run tf2_tools view_frames
+```
+
+Check ROS graph:
+
+```bash
+ros2 run rqt_graph rqt_graph
+```
+
+---
+
+## Debugging Commands
+
+### Topic inspection
+
+```bash
+# List all active topics
+ros2 topic list
+
+# Check publish rate
+ros2 topic hz /odometry/local
+ros2 topic hz /odometry/global
+ros2 topic hz /automobile/imu/data
+ros2 topic hz /visual_odom_planar
+ros2 topic hz /automobile/current_coordinate
+
+# Print one message
+ros2 topic echo /encoder_odom --once
+ros2 topic echo /automobile/imu/data --once
+ros2 topic echo /odometry/local --once
+ros2 topic echo /odometry/global --once
+ros2 topic echo /automobile/gps/base_pose --once
+ros2 topic echo /automobile/map_match/base_pose --once
+ros2 topic echo /automobile/current_coordinate --once
+ros2 topic echo /automobile/current_node --once
+ros2 topic echo /automobile/sign/base_pose --once
+
+# Print image topic without raw bytes
+ros2 topic echo /automobile/map_match/lane_mask --no-arr
+
+# Check publisher/subscriber info
+ros2 topic info /odometry/local
+ros2 topic info /visual_odom_planar
+ros2 topic info /automobile/gps/base_pose
+ros2 topic info /automobile/map_match/base_pose
+ros2 topic info /odometry/global
+```
+
+### Message type inspection
+
+```bash
+ros2 interface show nav_msgs/msg/Odometry
+ros2 interface show sensor_msgs/msg/Imu
+ros2 interface show geometry_msgs/msg/PoseWithCovarianceStamped
+ros2 interface show geometry_msgs/msg/PoseStamped
+ros2 interface show std_msgs/msg/Float32
+ros2 interface show std_msgs/msg/Int32
+ros2 interface show sensor_msgs/msg/Image
+```
+
+### TF inspection
+
+```bash
+# Check individual transforms
+ros2 run tf2_ros tf2_echo base_link imu_link
+ros2 run tf2_ros tf2_echo base_link gps_tag_link
+ros2 run tf2_ros tf2_echo base_link oak_left_camera_optical_frame
+ros2 run tf2_ros tf2_echo odom base_link
+ros2 run tf2_ros tf2_echo map odom
+
+# Save TF tree to PDF
+ros2 run tf2_tools view_frames
+```
+
+### Node and graph inspection
+
+```bash
+# List all active nodes
+ros2 node list
+
+# Show node details
+ros2 node info /gps_tag_to_base_node
+ros2 node info /ekf_filter_node
+
+# Full ROS graph
+ros2 run rqt_graph rqt_graph
+```
+
+### IMU hardware
+
+```bash
+# Check I2C devices
+ls -l /dev/i2c*
+sudo chmod 666 /dev/i2c-7
+i2cdetect -y -r 7
+# Expected BNO055 at address 0x28:
+# 20: -- -- -- -- -- -- -- -- 28 -- -- -- -- -- -- --
+```
+
+### Docker
+
+```bash
+# List running containers
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# Enter a running container
+docker exec -it --user admin <container_name> bash
+
+# Check which image the container is using
+docker inspect <container_name> | grep Image
+
+# Check Docker image was built with BFMC layer
+docker history isaac_ros_dev-aarch64 | head -20
+```
+
+### Parallelism notes
+
+Steps that can run in parallel once their inputs are ready:
+
+- `bfmc_state_odometry` and `bfmc_isaac_visual_odom` are **independent** — launch both at the same time
+- `bfmc_gps_position` and `bfmc_map_matching` both depend only on `/odometry/local` — launch both at the same time after `bfmc_odometry_fusion` is running
+
 ---
 
 ## Common Problems
 
 ### `i2cdetect: command not found`
 
-The container does not include `i2c-tools`. Check that the BFMC Docker layer was actually used.
-
-Expected image key:
-
-```text
-aarch64.ros2_humble.bfmc
-```
+The BFMC Docker layer was not used. Check that `~/.isaac_ros_common-config` sets `CONFIG_IMAGE_KEY="ros2_humble.bfmc"` and that `Dockerfile.bfmc` exists in `~/workspaces/isaac_ros-dev/docker/`.
 
 ### `Permission denied: /dev/i2c-7`
-
-Run inside Docker:
 
 ```bash
 sudo chmod 666 /dev/i2c-7
@@ -631,12 +674,34 @@ sudo chmod 666 /dev/i2c-7
 
 ### `ModuleNotFoundError: No module named smbus2`
 
-The BFMC Docker layer was not used, or `smbus2` was not installed. Rebuild the image from `Dockerfile.bfmc`.
-
-### `ModuleNotFoundError: No module named board`
-
-Do not use the Adafruit `board`/`busio` implementation inside Docker. Use the direct `smbus2` BNO055 node instead.
+The BFMC Docker layer was not applied. Rebuild the image.
 
 ### `magic_enum::magic_enum target was not found`
 
-- The Isaac GXF package needs `magic_enum`. Install it from source in `Dockerfile.bfmc`; do not use `libmagic-enum-dev` on Jetson because it may not exist in the apt repositories.
+The Isaac GXF packages require `magic_enum`. It must be installed from source in `Dockerfile.bfmc`. Do not use `libmagic-enum-dev` — it is not available in the Jetson apt repositories.
+
+### Build shows only `aarch64.ros2_humble` (missing `.bfmc`)
+
+Check `~/.isaac_ros_common-config`:
+
+```bash
+cat ~/.isaac_ros_common-config
+# Should contain:
+# CONFIG_IMAGE_KEY="ros2_humble.bfmc"
+# CONFIG_DOCKER_SEARCH_DIRS=("$HOME/workspaces/isaac_ros-dev/docker")
+```
+
+Check the Dockerfile exists:
+
+```bash
+ls ~/workspaces/isaac_ros-dev/docker/Dockerfile.bfmc
+```
+
+### `file 'bfmc_localization.launch.py' was not found`
+
+Rebuild `bfmc_global_localization` after syncing:
+
+```bash
+colcon build --symlink-install --packages-select bfmc_global_localization --cmake-args -DBUILD_TESTING=OFF
+source install/setup.bash
+```
