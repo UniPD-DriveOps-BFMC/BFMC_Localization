@@ -468,6 +468,15 @@
     <origin xyz="0.135 0 0.102" rpy="0 0 0"/>
   </joint>
 
+  <!-- Rear IMU (BNO055) — position from SolidWorks assembly export -->
+  <link name="imu_link"/>
+
+  <joint name="base_link_to_imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.067 0 0.0145" rpy="0 0 0"/>
+  </joint>
+
   <!-- Official OAK-D Pro description attached to the SolidWorks camera_base_link.
        If this duplicates the CAD camera visual, remove the visual/collision block of camera_base_link
        or remove this macro and keep only the CAD mesh. -->
