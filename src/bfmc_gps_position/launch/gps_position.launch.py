@@ -17,12 +17,15 @@ def generate_launch_description():
             'base_frame': 'base_link',
             'tag_frame': 'gps_tag_link',
 
-            # Use local EKF yaw to rotate the URDF tag offset.
-            'use_yaw_from_local_odom': True,
+            # Stddev in metres at quality=100 (max error = 15 cm radius).
+            # Scales linearly: stddev = base_stddev * (100 / quality).
+            'base_stddev_m': 0.15,
+            'max_stddev_m': 2.0,
+            'min_quality': 5,
 
-            # Force competition GPS/UWB covariance.
-            'force_xy_variance': True,
-            'position_stddev_m': 0.15,
+            # GPS messages arrive ~1 s after the measurement was taken.
+            # Subtracted from the header stamp for correct EKF time association.
+            'measurement_delay_s': 1.0,
         }],
     )
 
