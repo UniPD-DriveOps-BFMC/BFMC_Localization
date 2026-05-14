@@ -42,7 +42,6 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'sign_map_file': sign_map_file,
             'detection_topic': '/traffic/detection',
-            'distance_topic': '/traffic/distance',
             'local_odom_topic': '/odometry/local',
             'output_pose_topic': '/automobile/sign/base_pose',
             'map_frame': 'map',

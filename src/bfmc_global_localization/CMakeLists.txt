@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nlohmann_json REQUIRED)
 add_executable(sign_localization_node src/sign_localization_node.cpp)
 ament_target_dependencies(sign_localization_node
   rclcpp
@@ -17,6 +18,7 @@ ament_target_dependencies(sign_localization_node
   nav_msgs
   geometry_msgs
 )
+target_link_libraries(sign_localization_node nlohmann_json::nlohmann_json)
 
 add_executable(position_publisher_node src/position_publisher_node.cpp)
 ament_target_dependencies(position_publisher_node
