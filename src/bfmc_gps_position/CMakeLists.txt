@@ -45,9 +45,14 @@ install(TARGETS
 
 install(DIRECTORY
   launch
-  config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config")
+  install(DIRECTORY config
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
