@@ -40,4 +40,5 @@ RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enu
     ln -sf /usr/local/include/magic_enum/magic_enum.hpp /usr/local/include/magic_enum.hpp && \
     rm -rf /tmp/magic_enum
 
-RUN pip3 install --no-cache-dir smbus2
+RUN pip3 install --no-cache-dir \
+    smbus2
