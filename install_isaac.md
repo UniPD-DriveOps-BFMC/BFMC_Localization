@@ -268,6 +268,10 @@ rsync -av --delete \
   ~/workspaces/BFMC_Localization/src/bfmc_map_matching \
   ~/workspaces/BFMC_Localization/src/bfmc_global_localization \
   ~/workspaces/isaac_ros-dev/src/
+
+rsync -av --delete \
+  ~/workspaces/BFMC_Localization/docker/ \
+  ~/workspaces/isaac_ros-dev/docker/
 ```
 
 ### 12. Build BFMC packages
@@ -340,3 +344,7 @@ ros2 topic echo /automobile/imu/data
 ```
 
 Do not rebuild Isaac every time. Only rebuild changed BFMC packages.
+
+```bash
+ros2 launch bfmc_global_localization bfmc_localization.launch.py
+```
