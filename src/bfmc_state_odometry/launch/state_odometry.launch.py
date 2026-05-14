@@ -32,15 +32,9 @@ def generate_launch_description():
         name='car_imu_republisher_node',
         output='screen',
         parameters=[{
-            'input_topic': '/automobile/IMU',
+            'input_topic': '/automobile/imu/data',
             'output_topic': '/car/imu/data',
             'output_frame_id': 'car_imu_link',
-
-            # First EKF-safe values.
-            # We mainly want yaw-rate from this IMU at first.
-            'orientation_variance': 999999.0,
-            'angular_velocity_variance': 0.02,
-            'linear_acceleration_variance': 0.5,
         }],
     )
 

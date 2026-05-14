@@ -13,9 +13,6 @@ ekf_filter_node_map:
     publish_acceleration: false
 
     # --- Local EKF output ---
-    # Pose is in the odom frame so only velocity is taken.
-    # Provides fused vx (encoder) and vyaw (IMU) to propagate the global
-    # state smoothly between the slower GPS / map-matching updates.
     odom0: /odometry/local
     odom0_config: [
       false, false, false,
@@ -43,21 +40,7 @@ ekf_filter_node_map:
     pose0_rejection_threshold: 3.0
 
     # --- Sign-based position (covariance grows with detection distance) ---
-    pose2: /automobile/sign/base_pose
-    pose2_config: [
-      true,  true,  false,
-      false, false, false,
-      false, false, false,
-      false, false, false,
-      false, false, false
-    ]
-    pose2_queue_size: 5
-    pose2_differential: false
-    pose2_relative: false
-    pose2_rejection_threshold: 3.0
-
-    # --- GPS position (dynamic covariance from quality, delay compensated) ---
-    pose1: /automobile/gps/base_pose
+    pose1: /automobile/sign/base_pose
     pose1_config: [
       true,  true,  false,
       false, false, false,
@@ -65,7 +48,7 @@ ekf_filter_node_map:
       false, false, false,
       false, false, false
     ]
-    pose1_queue_size: 10
+    pose1_queue_size: 5
     pose1_differential: false
     pose1_relative: false
     pose1_rejection_threshold: 3.0
