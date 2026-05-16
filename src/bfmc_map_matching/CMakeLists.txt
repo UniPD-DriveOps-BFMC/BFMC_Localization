@@ -12,6 +12,8 @@ find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 
 add_executable(rgb_map_matching_node
@@ -25,6 +27,8 @@ ament_target_dependencies(rgb_map_matching_node
   geometry_msgs
   cv_bridge
   image_transport
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 target_link_libraries(rgb_map_matching_node

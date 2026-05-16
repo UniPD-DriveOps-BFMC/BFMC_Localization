@@ -34,7 +34,7 @@ def generate_launch_description():
         parameters=[{
             'input_topic': '/automobile/imu/data',
             'output_topic': '/car/imu/data',
-            'output_frame_id': 'car_imu_link',
+            'output_frame_id': 'imu_link',
         }],
     )
 

@@ -12,7 +12,7 @@ def generate_launch_description():
     imu_topic = '/oak/imu/data'
 
     base_frame = 'base_link'
-    odom_frame = 'visual_odom'
+    odom_frame = 'odom'
     map_frame = 'visual_map'
     imu_frame = 'oak_imu_frame'
 
@@ -57,7 +57,7 @@ def generate_launch_description():
                 right_camera_frame,
             ],
 
-            'publish_odom_to_base_tf': True,
+            'publish_odom_to_base_tf': False,
             'publish_map_to_odom_tf': False,
 
             'enable_slam_visualization': True,

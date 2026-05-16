@@ -144,9 +144,12 @@ private:
       return;
     }
 
-    // Car is behind the sign at distance_m along the current heading.
-    const double car_x = best->x - distance_m * std::cos(latest_yaw_);
-    const double car_y = best->y - distance_m * std::sin(latest_yaw_);
+    // Signs are beside the road, not directly ahead — compute the geometric
+    // bearing from the current odometry position to the sign and apply
+    // distance_m along that direction rather than along the car heading.
+    const double bearing = std::atan2(best->y - latest_y_, best->x - latest_x_);
+    const double car_x = best->x - distance_m * std::cos(bearing);
+    const double car_y = best->y - distance_m * std::sin(bearing);
 
     // Base variance from distance and bearing uncertainty.
     const double var_radial  = distance_stddev_m_ * distance_stddev_m_;

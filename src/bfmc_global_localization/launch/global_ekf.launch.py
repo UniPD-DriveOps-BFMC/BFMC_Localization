@@ -42,7 +42,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'sign_map_file': sign_map_file,
             'detection_topic': '/traffic/detection',
-            'local_odom_topic': '/odometry/local',
+            'local_odom_topic': '/odometry/global',
             'output_pose_topic': '/automobile/sign/base_pose',
             'map_frame': 'map',
             # Stddev of distance sensor reading (metres).
@@ -70,8 +70,11 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'use_gps': use_gps,
             'odom_topic': '/odometry/global',
+            'local_odom_topic': '/odometry/local',
             'coordinate_topic': '/automobile/current_coordinate',
             'node_topic': '/automobile/current_node',
+            'distance_topic': '/automobile/total_distance',
+            'speed_topic': '/automobile/current_speed',
             'graph_file': graph_file,
         }],
     )

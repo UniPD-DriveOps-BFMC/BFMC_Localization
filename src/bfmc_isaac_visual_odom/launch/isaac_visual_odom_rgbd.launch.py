@@ -10,7 +10,7 @@ def generate_launch_description():
     depth_image_topic = '/oak/stereo/image_raw'
 
     base_frame = 'automobile/camera/link_camera/oak_rgb'
-    odom_frame = 'visual_odom'
+    odom_frame = 'odom'
     map_frame = 'visual_map'
 
     camera_frame = 'automobile/camera/link_camera/oak_rgb'
@@ -37,7 +37,7 @@ def generate_launch_description():
             'odom_frame': odom_frame,
             'map_frame': map_frame,
             'camera_optical_frames': [camera_frame],
-            'publish_odom_to_base_tf': True,
+            'publish_odom_to_base_tf': False,
             'publish_map_to_odom_tf': False,
             'enable_slam_visualization': True,
             'enable_observations_view': True,

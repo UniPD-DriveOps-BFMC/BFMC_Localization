@@ -1,21 +1,41 @@
 rgb_map_matching_node:
   ros__parameters:
-    image_topic: /oak/rgb/image_raw
-    camera_info_topic: /oak/rgb/camera_info
-    local_odom_topic: /odometry/local
+    image_topic:          /oak/rgb/image_rect
+    camera_info_topic:    /oak/rgb/camera_info
+    gps_pose_topic:       /automobile/gps/base_pose
 
     map_match_pose_topic: /automobile/map_match/base_pose
-    lane_mask_topic: /automobile/map_match/lane_mask
+    lane_mask_topic:      /automobile/map_match/lane_mask
 
-    map_frame: map
+    map_frame:  map
     base_frame: base_link
 
     graphml_map_file: Competition_track_graph.graphml
-    png_map_file: Competition_track_graph.png
-    svg_map_file: Track.svg
+    png_map_file:     Competition_track_graph.png
 
-    white_threshold: 180
+    # Lane marking detection thresholds (HSV)
+    white_threshold:      180
     saturation_threshold: 80
 
-    pose_xy_stddev_m: 0.30
-    pose_yaw_stddev_rad: 0.50
+    # GPS-constrained search radius (metres) — GPS is ±15 cm so 3 m is generous
+    gps_search_radius_m: 3.0
+
+    # Target lane points inside the GPS ROI per frame.
+    # Step is computed automatically at startup to hit this count.
+    # Higher = denser projection, better correlation, more CPU. Lower = faster.
+    target_roi_points: 50000
+
+    # PNG Y-axis: true = image row 0 is world Y_max (standard image convention)
+    map_y_flipped: true
+
+    # BEV ground patch visible ahead of the robot (metres)
+    bev_min_forward_m: 0.5
+    bev_max_forward_m: 4.0
+    bev_lateral_m:     1.5
+
+    # Minimum RANSAC inliers to accept a match
+    min_inliers: 12
+
+    # Published pose uncertainty
+    pose_xy_stddev_m:    0.20
+    pose_yaw_stddev_rad: 0.30

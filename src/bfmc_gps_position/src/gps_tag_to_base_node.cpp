@@ -35,6 +35,8 @@ public:
     base_stddev_m_ = declare_parameter<double>("base_stddev_m", 0.15);
     max_stddev_m_ = declare_parameter<double>("max_stddev_m", 2.0);
     min_quality_ = declare_parameter<int>("min_quality", 5);
+    const double mount_stddev = declare_parameter<double>("mount_offset_stddev_m", 0.03);
+    mount_offset_var_ = mount_stddev * mount_stddev;
 
     // GPS messages arrive ~1 s after the measurement was taken.
     // This value is subtracted from the header stamp so that robot_localization
@@ -142,7 +144,7 @@ private:
     const double base_x = static_cast<double>(msg->x) - (c * tag_offset_x - s * tag_offset_y);
     const double base_y = static_cast<double>(msg->y) - (s * tag_offset_x + c * tag_offset_y);
 
-    const double pos_var = computeVariance(msg->quality);
+    const double pos_var = computeVariance(msg->quality) + mount_offset_var_;
 
     geometry_msgs::msg::PoseWithCovarianceStamped out;
     // Subtract the known transmission delay so robot_localization can match
@@ -180,6 +182,7 @@ private:
 
   double base_stddev_m_{0.15};
   double max_stddev_m_{2.0};
+  double mount_offset_var_{0.0009};
   double measurement_delay_s_{1.0};
   int min_quality_{5};
 

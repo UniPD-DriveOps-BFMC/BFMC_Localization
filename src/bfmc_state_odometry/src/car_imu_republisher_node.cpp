@@ -12,7 +12,7 @@ public:
   {
     input_topic_ = declare_parameter<std::string>("input_topic", "/automobile/imu/data");
     output_topic_ = declare_parameter<std::string>("output_topic", "/car/imu/data");
-    output_frame_id_ = declare_parameter<std::string>("output_frame_id", "car_imu_link");
+    output_frame_id_ = declare_parameter<std::string>("output_frame_id", "imu_link");
 
     imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(output_topic_, 10);
 

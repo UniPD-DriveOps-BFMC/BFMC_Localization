@@ -9,7 +9,7 @@ def generate_launch_description():
         name='gps_tag_to_base_node',
         output='screen',
         parameters=[{
-            'tag_pose_topic': '/automobile/gps/tag_pose',
+            'tag_pose_topic': '/automobile/localisation',
             'local_odom_topic': '/odometry/local',
             'base_pose_topic': '/automobile/gps/base_pose',
 
@@ -22,6 +22,10 @@ def generate_launch_description():
             'base_stddev_m': 0.15,
             'max_stddev_m': 2.0,
             'min_quality': 5,
+
+            # Physical mounting offset uncertainty (±3 cm stddev → 0.03² = 0.0009 m² variance).
+            # Added to GPS signal variance so total_var = gps_var + mount_var.
+            'mount_offset_stddev_m': 0.03,
 
             # GPS messages arrive ~1 s after the measurement was taken.
             # Subtracted from the header stamp for correct EKF time association.

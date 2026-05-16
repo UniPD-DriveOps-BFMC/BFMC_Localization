@@ -23,9 +23,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             config_file,
-            {
-                'maps_dir': maps_dir,
-            }
+            {'maps_dir': maps_dir},
         ],
     )
 
