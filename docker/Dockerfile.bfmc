@@ -4,11 +4,6 @@ FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-    # Install OpenCV dev libraries explicitly first so the .so files are present
-    # before the ROS cv_bridge CMake config is evaluated at build time.
-    && apt-get install -y --no-install-recommends \
-        libopencv-dev \
-        libopencv-contrib-dev \
     && apt-get install -y --no-install-recommends \
     ros-humble-robot-localization \
     ros-humble-tf2-tools \
