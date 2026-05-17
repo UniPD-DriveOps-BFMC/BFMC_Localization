@@ -141,7 +141,7 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash 2>/dev/null || true
 
 echo "--- IMU hardware permission ---"
-chmod 666 /dev/i2c-${I2C_BUS} 2>/dev/null && \
+sudo chmod 666 /dev/i2c-${I2C_BUS} 2>/dev/null && \
   echo "  /dev/i2c-${I2C_BUS} ready" || \
   echo "  WARNING: could not chmod /dev/i2c-${I2C_BUS} (IMU may not work)"
 
@@ -181,7 +181,7 @@ echo ""
 echo "Starting Isaac ROS Docker container..."
 echo ""
 echo "  ┌─ Once the shell opens, run: ───────────────────────────────┐"
-echo "  │  sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh           │"
+echo "  │  bash /workspaces/isaac_ros-dev/run_bfmc.sh                │"
 echo "  └────────────────────────────────────────────────────────────┘"
 echo ""
 cd "$ISAAC_COMMON"

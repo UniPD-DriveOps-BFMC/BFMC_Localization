@@ -194,7 +194,7 @@ Runs on the **Jetson**. Syncs packages and the Dockerfile into `isaac_ros-dev`, 
 Once the container shell opens (`admin@ubuntu:/workspaces/isaac_ros-dev$`), run:
 
 ```bash
-sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
+bash /workspaces/isaac_ros-dev/run_bfmc.sh
 ```
 
 This single command sources ROS, fixes I2C permissions, builds the BFMC packages, launches the localization stack, and starts the path planner — all with the options passed to `run_localization.sh`.
@@ -394,7 +394,7 @@ cd ~/workspaces/BFMC_Localization
 When the container shell opens:
 
 ```bash
-sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
+bash /workspaces/isaac_ros-dev/run_bfmc.sh
 ```
 
 ### 2.3 Verify
@@ -440,7 +440,7 @@ git pull
 When `run_localization.sh` drops to a shell, you are inside the container (`admin@ubuntu:/workspaces/isaac_ros-dev$`). Run:
 
 ```bash
-sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
+bash /workspaces/isaac_ros-dev/run_bfmc.sh
 ```
 
 To open a second terminal into the same running container:
