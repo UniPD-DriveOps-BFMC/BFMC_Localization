@@ -2,7 +2,7 @@
 """
 BFMC Localization — Rosbag Plotter
 
-Reads a ROS2 bag (SQLite3 format, no ROS install required) and produces:
+Reads a ROS2 bag (SQLite3 or MCAP format, no ROS install required) and produces:
   plot_distance.png — encoder/distance vs odom_distance vs total_distance
   plot_velocity.png — odom_velocity vs current_speed
   plot_map.png      — GPS localisation + fused position track on the competition map
@@ -16,6 +16,7 @@ Example:
 
 Requirements:
   pip install matplotlib numpy
+  pip install mcap mcap-ros2-support   # for MCAP bags (ROS2 Jazzy default)
 """
 
 import argparse
@@ -148,25 +149,15 @@ _PARSERS = {
 }
 
 
-def read_bag(bag_dir: Path) -> Dict[str, List[dict]]:
-    """Read all relevant topics from the bag's SQLite3 database."""
-    db_files = sorted(bag_dir.glob('*.db3'))
-    if not db_files:
-        sys.exit(f"ERROR: No .db3 file found in {bag_dir}\n"
-                 "  Is this a valid ROS2 bag directory?")
-
-    data: Dict[str, List[dict]] = {topic: [] for topic in _PARSERS}
-
+def _read_db3(db_files: List[Path], data: Dict[str, List[dict]]) -> None:
+    """Read messages from SQLite3 (.db3) bag files."""
     for db_path in db_files:
         with sqlite3.connect(str(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-
             cur.execute("SELECT id, name FROM topics")
             topic_map = {row['id']: row['name'] for row in cur.fetchall()}
-
             wanted = {name: tid for tid, name in topic_map.items() if name in _PARSERS}
-
             for topic_name, topic_id in wanted.items():
                 cur.execute(
                     "SELECT timestamp, data FROM messages "
@@ -180,7 +171,64 @@ def read_bag(bag_dir: Path) -> Dict[str, List[dict]]:
                         msg['bag_t'] = row['timestamp'] * 1e-9
                         data[topic_name].append(msg)
                     except Exception:
-                        pass  # skip malformed messages
+                        pass
+
+
+def _read_mcap(mcap_files: List[Path], data: Dict[str, List[dict]]) -> None:
+    """Read messages from MCAP bag files (ROS2 Jazzy default format).
+
+    Uses the low-level stream reader so truncated bags (stopped with Ctrl+C
+    before the footer is written) are handled gracefully.
+    """
+    try:
+        from mcap.stream_reader import StreamReader
+        from mcap.records import Message, Channel
+    except ImportError:
+        sys.exit(
+            "ERROR: MCAP bag detected but 'mcap' library is not installed.\n"
+            "  Run:  pip install mcap mcap-ros2-support"
+        )
+
+    for mcap_path in mcap_files:
+        channels: Dict[int, str] = {}
+        with open(str(mcap_path), 'rb') as f:
+            reader = StreamReader(f, skip_magic=False)
+            try:
+                for rec in reader.records:
+                    if isinstance(rec, Channel):
+                        channels[rec.id] = rec.topic
+                    elif isinstance(rec, Message):
+                        topic_name = channels.get(rec.channel_id)
+                        if topic_name not in _PARSERS:
+                            continue
+                        parser = _PARSERS[topic_name]
+                        try:
+                            msg = parser(bytes(rec.data))
+                            msg['bag_t'] = rec.log_time * 1e-9
+                            data[topic_name].append(msg)
+                        except Exception:
+                            pass
+            except Exception:
+                pass  # truncated file — stop reading, keep what we have
+
+
+def read_bag(bag_dir: Path) -> Dict[str, List[dict]]:
+    """Read all relevant topics from a ROS2 bag (SQLite3 or MCAP format)."""
+    db_files  = sorted(bag_dir.glob('*.db3'))
+    mcap_files = sorted(bag_dir.glob('*.mcap'))
+
+    if not db_files and not mcap_files:
+        sys.exit(
+            f"ERROR: No .db3 or .mcap file found in {bag_dir}\n"
+            "  Is this a valid ROS2 bag directory?"
+        )
+
+    data: Dict[str, List[dict]] = {topic: [] for topic in _PARSERS}
+
+    if db_files:
+        _read_db3(db_files, data)
+    if mcap_files:
+        _read_mcap(mcap_files, data)
 
     return data
 
