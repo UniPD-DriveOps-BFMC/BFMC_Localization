@@ -88,8 +88,9 @@ fi
 # ── step 1: symlink ───────────────────────────────────────────────────────────
 if [ "$NO_SYNC" = false ]; then
   echo "[1/3] Symlinking BFMC packages → isaac_ros-dev..."
-  # src packages — every directory directly under src/
-  for pkg_path in "$BFMC_WS/src"/*/; do
+  # src packages — only BFMC-owned packages (automobile_* and bfmc_*)
+  for pkg_path in "$BFMC_WS/src"/automobile_*/ "$BFMC_WS/src"/bfmc_*/; do
+    [ -d "$pkg_path" ] || continue
     pkg=$(basename "$pkg_path")
     target="$ISAAC_WS/src/$pkg"
     [ -d "$target" ] && [ ! -L "$target" ] && rm -rf "$target"
