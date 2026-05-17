@@ -66,7 +66,7 @@ echo "╚═══════════════════════�
 echo "  GPS:         $USE_GPS"
 echo "  Camera mode: $CAMERA_MODE"
 echo "  Build:       $([ "$REBUILD" = true ] && echo yes || echo skipped)"
-echo "  Sync:        $([ "$NO_SYNC" = true ] && echo no || echo yes)"
+echo "  Symlink:     $([ "$NO_SYNC" = true ] && echo no || echo yes)"
 echo "  I2C bus:     $I2C_BUS"
 echo "  Start mode:  $START_MODE"
 echo ""
@@ -85,29 +85,23 @@ if ! docker info &>/dev/null; then
   exit 1
 fi
 
-# ── step 1: sync ─────────────────────────────────────────────────────────────
+# ── step 1: symlink ───────────────────────────────────────────────────────────
 if [ "$NO_SYNC" = false ]; then
-  echo "[1/3] Syncing BFMC packages → isaac_ros-dev..."
-  PACKAGES=(
-    automobile_imu
-    bfmc_car_description
-    bfmc_isaac_visual_odom
-    bfmc_state_odometry
-    bfmc_odometry_fusion
-    bfmc_gps_position
-    bfmc_map_matching
-    bfmc_global_localization
-  )
-  for pkg in "${PACKAGES[@]}"; do
-    if [ -d "$BFMC_WS/src/$pkg" ]; then
-      rsync -a --delete "$BFMC_WS/src/$pkg" "$ISAAC_WS/src/"
-    else
-      echo "  WARNING: $pkg not found in $BFMC_WS/src — skipping"
-    fi
+  echo "[1/3] Symlinking BFMC packages → isaac_ros-dev..."
+  # src packages — every directory directly under src/
+  for pkg_path in "$BFMC_WS/src"/*/; do
+    pkg=$(basename "$pkg_path")
+    ln -sfn "$pkg_path" "$ISAAC_WS/src/$pkg"
+    echo "  linked: src/$pkg"
   done
-  echo "  Sync done."
+  # Dockerfile so the OpenCV symlink fix reaches the image build
+  if [ -f "$BFMC_WS/docker/Dockerfile.bfmc" ]; then
+    ln -sf "$BFMC_WS/docker/Dockerfile.bfmc" "$ISAAC_WS/docker/Dockerfile.bfmc"
+    echo "  linked: docker/Dockerfile.bfmc"
+  fi
+  echo "  Symlink done."
 else
-  echo "[1/3] Sync skipped (--no-sync)."
+  echo "[1/3] Symlink skipped (--no-sync)."
 fi
 
 # ── step 2: build command (optional) ─────────────────────────────────────────
