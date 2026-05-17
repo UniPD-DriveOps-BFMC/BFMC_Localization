@@ -9,11 +9,11 @@ def generate_launch_description():
     rgb_info_topic = '/oak/rgb/camera_info'
     depth_image_topic = '/oak/stereo/image_raw'
 
-    base_frame = 'automobile/camera/link_camera/oak_rgb'
+    base_frame = 'base_link'
     odom_frame = 'odom'
     map_frame = 'visual_map'
 
-    camera_frame = 'automobile/camera/link_camera/oak_rgb'
+    camera_frame = 'oak_rgb_camera_optical_frame'
 
     depth_scale_factor = 1.0
 

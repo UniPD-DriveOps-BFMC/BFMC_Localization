@@ -52,13 +52,21 @@ This workspace runs inside the **Isaac ROS Docker container** (ROS 2 Humble) on 
 
 ```text
 map
- └── odom                   ← global EKF (bfmc_global_localization)
-      └── base_link          ← local EKF (bfmc_odometry_fusion)
-           ├── imu_link
-           ├── gps_tag_link
-           └── oak-d-base_frame
-                ├── oak_left_camera_optical_frame
-                └── oak_right_camera_optical_frame
+ └── odom                        ← global EKF (bfmc_global_localization)
+      └── base_link               ← local EKF (bfmc_odometry_fusion)
+           ├── imu_link            ← BNO055 IMU (robot_state_publisher)
+           ├── gps_tag_link        ← GPS antenna mount (robot_state_publisher)
+           └── camera_mount_link
+                └── camera_base_link
+                     └── oak-d-base_frame   ← depthai_descriptions
+                          ├── oak_imu_frame
+                          ├── oak_model_origin
+                          ├── oak_left_camera_frame
+                          │    └── oak_left_camera_optical_frame
+                          ├── oak_rgb_camera_frame
+                          │    └── oak_rgb_camera_optical_frame   ← used by map matching
+                          └── oak_right_camera_frame
+                               └── oak_right_camera_optical_frame
 ```
 
 ---
@@ -236,19 +244,36 @@ Detach         : Ctrl+B then D
 Kill session   : tmux kill-session -t bfmc_monitor
 ```
 
-**Topics recorded and monitored:**
+**Topics recorded:**
 
-| Topic | Content |
-|-------|---------|
-| `/automobile/current_coordinate` | x, y position (map or start frame) |
-| `/automobile/current_node` | Current graph node ID |
-| `/automobile/current_speed` | Speed in m/s |
-| `/automobile/total_distance` | Total path length from start (m) |
-| `/odometry/local` | Local odometry (relative to start) |
-| `/odometry/global` | Global odometry (relative to GPS 0,0) |
-| `/automobile/gps/base_pose` | GPS-derived pose |
-| `/automobile/map_match/base_pose` | Map-matched pose |
-| `/automobile/sign/base_pose` | Sign-derived pose |
+| Group | Topic | Content |
+|-------|-------|---------|
+| Hardware inputs | `/automobile/encoder/speed` | Wheel encoder speed (m/s) |
+| | `/automobile/encoder/distance` | Wheel encoder distance (m) |
+| | `/automobile/imu/data` | Raw BNO055 IMU |
+| | `/automobile/localisation` | Raw GPS tag pose from car firmware |
+| | `/visual_slam/tracking/odometry` | Isaac ROS visual SLAM output |
+| | `/oak/rgb/camera_info` | Camera intrinsics |
+| | `/oak/rgb/image_rect` | Rectified RGB image *(large — remove if storage limited)* |
+| | `/traffic/detection` | Sign detection JSON |
+| Internal | `/car/imu/data` | IMU republished with `imu_link` frame |
+| | `/encoder_odom` | Encoder odometry |
+| | `/visual_odom` | 3D visual odometry |
+| | `/visual_odom_planar` | Flattened 2D visual odometry |
+| | `/odometry/local` | Local EKF output |
+| | `/automobile/gps/base_pose` | GPS pose in map frame |
+| | `/automobile/map_match/base_pose` | Map-matched pose |
+| | `/automobile/map_match/lane_mask` | Lane mask image |
+| | `/automobile/sign/base_pose` | Sign-derived pose |
+| | `/odometry/global` | Global EKF output |
+| | `/odom_distance` | Cumulative distance from local odom |
+| | `/odom_velocity` | Speed from local odom |
+| Final outputs | `/automobile/current_coordinate` | x, y position (map or start frame) |
+| | `/automobile/current_node` | Current graph node ID |
+| | `/automobile/current_speed` | Speed in m/s |
+| | `/automobile/total_distance` | Total path length from start (m) |
+| Transforms | `/tf` | Dynamic transforms |
+| | `/tf_static` | Static transforms (required for playback) |
 
 **Network setup** — set `ROS_DOMAIN_ID` on both machines before running:
 
@@ -372,8 +397,8 @@ cat > ~/sync_bfmc_to_isaac.sh <<'EOF'
 #!/bin/bash
 set -e
 
-SRC="$HOME/workspaces/BFMC_Localization/src"
-WS="$HOME/workspaces/BFMC_Localization"
+SRC="$HOME/ros2_workspaces/BFMC_Localization/src"
+WS="$HOME/ros2_workspaces/BFMC_Localization"
 DST="$HOME/workspaces/isaac_ros-dev/src"
 DOCKER_DST="$HOME/workspaces/isaac_ros-dev/docker"
 
@@ -653,9 +678,10 @@ Expected active topics:
 
 ```text
 /automobile/imu/data
+/car/imu/data
+/encoder_odom
 /visual_odom
 /visual_odom_planar
-/encoder_odom
 /odometry/local
 /odom_distance
 /odom_velocity
