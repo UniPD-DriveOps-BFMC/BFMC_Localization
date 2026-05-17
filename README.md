@@ -169,31 +169,44 @@ OAK-D camera   ──────────► bfmc_isaac_visual_odom ──�
 
 ### `run_localization.sh` — Jetson launcher
 
-Runs on the **Jetson**. Syncs packages, starts the Isaac ROS Docker container, builds, and launches the full localization stack — one command.
+Runs on the **Jetson**. Syncs packages and the Dockerfile into `isaac_ros-dev`, writes `run_bfmc.sh` into the workspace, and starts the Isaac ROS Docker container. Once the container shell opens, run the generated script to build and launch everything.
 
 ```bash
-# Full run with GPS (sync + build + docker + launch)
-./run_localization.sh
+# Normal start — EKF seeded to the physical start box
+./run_localization.sh --normal-start
+
+# Random start — EKF seeded from first map-matched node
+./run_localization.sh --random-start
 
 # Without GPS
-./run_localization.sh --use-gps false
+./run_localization.sh --normal-start --use-gps false
 
 # RGBD camera mode
-./run_localization.sh --camera-mode rgbd
+./run_localization.sh --normal-start --camera-mode rgbd
 
 # Skip rebuild (already built, just relaunch)
-./run_localization.sh --no-rebuild
+./run_localization.sh --normal-start --no-rebuild
 
 # Skip both sync and rebuild (fastest relaunch)
-./run_localization.sh --no-sync --no-rebuild
+./run_localization.sh --normal-start --no-sync --no-rebuild
 ```
+
+Once the container shell opens (`admin@ubuntu:/workspaces/isaac_ros-dev$`), run:
+
+```bash
+sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
+```
+
+This single command sources ROS, fixes I2C permissions, builds the BFMC packages, launches the localization stack, and starts the path planner — all with the options passed to `run_localization.sh`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `--normal-start` | *(default)* | Seed EKF to the physical start box; begin path from node 472 |
+| `--random-start` | off | Wait for `/automobile/current_node` and begin from that position |
 | `--use-gps true\|false` | `true` | Enable GPS fusion |
 | `--camera-mode stereo\|rgbd` | `stereo` | Visual odometry camera mode |
 | `--no-rebuild` | off | Skip colcon build step |
-| `--no-sync` | off | Skip rsync to isaac_ros-dev |
+| `--no-sync` | off | Skip syncing packages to isaac_ros-dev |
 | `--i2c-bus N` | `7` | I2C bus number for BNO055 IMU |
 
 ---
@@ -339,133 +352,28 @@ EOF
 
 Expected image key after this: `aarch64.ros2_humble.bfmc`
 
-### 1.4 Create the BFMC Dockerfile
+### 1.4 Create the docker directory
+
+`run_localization.sh` syncs `docker/Dockerfile.bfmc` from the repo into `isaac_ros-dev/docker/` automatically on every run. Just create the target directory:
 
 ```bash
 mkdir -p ~/workspaces/isaac_ros-dev/docker
-cat > ~/workspaces/isaac_ros-dev/docker/Dockerfile.bfmc <<'EOF'
-ARG BASE_IMAGE
-FROM ${BASE_IMAGE}
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-humble-robot-localization \
-    ros-humble-tf2-tools \
-    ros-humble-rqt-graph \
-    ros-humble-xacro \
-    ros-humble-joint-state-publisher \
-    ros-humble-joint-state-publisher-gui \
-    ros-humble-robot-state-publisher \
-    ros-humble-image-transport \
-    ros-humble-cv-bridge \
-    ros-humble-vision-opencv \
-    ros-humble-depthai-ros \
-    ros-humble-depthai-bridge \
-    ros-humble-depthai-descriptions \
-    ros-humble-depthai-examples \
-    i2c-tools \
-    python3-pip \
-    python3-smbus \
-    python3-dev \
-    python3-numpy \
-    python3-opencv \
-    git cmake build-essential \
-    nlohmann-json3-dev \
-    libyaml-cpp-dev \
-    libopencv-dev \
-    v4l-utils usbutils \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enum && \
-    cmake -S /tmp/magic_enum -B /tmp/magic_enum/build -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    cmake --build /tmp/magic_enum/build --target install && \
-    rm -rf /tmp/magic_enum
-
-RUN pip3 install --no-cache-dir smbus2
-EOF
-```
-
-> `magic_enum` is built from source because `libmagic-enum-dev` is not in the Jetson apt repositories. It is required by the Isaac GXF packages.
-
-### 1.5 Create the sync script
-
-Creates `~/sync_bfmc_to_isaac.sh` which you run after every `git pull`:
-
-```bash
-cat > ~/sync_bfmc_to_isaac.sh <<'EOF'
-#!/bin/bash
-set -e
-
-SRC="$HOME/ros2_workspaces/BFMC_Localization/src"
-WS="$HOME/ros2_workspaces/BFMC_Localization"
-DST="$HOME/workspaces/isaac_ros-dev/src"
-DOCKER_DST="$HOME/workspaces/isaac_ros-dev/docker"
-
-mkdir -p "$DST" "$DOCKER_DST"
-
-rsync -av --delete \
-  "$SRC/automobile_imu" \
-  "$SRC/bfmc_car_description" \
-  "$SRC/bfmc_isaac_visual_odom" \
-  "$SRC/bfmc_state_odometry" \
-  "$SRC/bfmc_odometry_fusion" \
-  "$SRC/bfmc_gps_position" \
-  "$SRC/bfmc_map_matching" \
-  "$SRC/bfmc_global_localization" \
-  "$DST/"
-
-rsync -av --delete "$WS/docker/" "$DOCKER_DST/"
-
-echo "Sync complete."
-EOF
-
-chmod +x ~/sync_bfmc_to_isaac.sh
 ```
 
 ---
 
 ## 2. First Time Compiling (inside Docker)
 
-### 2.1 Pull packages and sync
+### 2.1 Build Isaac Visual SLAM dependencies (once)
 
-On the Jetson host (outside Docker):
+This must complete before the BFMC packages can be built. Run it manually inside the container — takes ~10 minutes on first run.
 
-```bash
-cd ~/workspaces/BFMC_Localization
-git pull
-
-~/sync_bfmc_to_isaac.sh
-```
-
-### 2.2 Enter Docker (builds the custom image on first run)
-
-```bash
-cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
-./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
-```
-
-The log should show:
-
-```text
-Launching Isaac ROS Dev container with image key aarch64.ros2_humble.bfmc
-Resolved ... Dockerfile.bfmc
-```
-
-If you only see `aarch64.ros2_humble`, the BFMC Docker layer is not being picked up — check `~/.isaac_ros_common-config` and the docker search dir.
-
-### 2.3 Source ROS inside Docker
+Enter the container first (see step 3.2 below), then:
 
 ```bash
 cd /workspaces/isaac_ros-dev
 source /opt/ros/humble/setup.bash
-```
 
-### 2.4 Build Isaac Visual SLAM dependencies
-
-This must complete successfully before building the BFMC packages. Takes ~10 minutes on first run.
-
-```bash
 colcon build --symlink-install \
   --packages-up-to isaac_ros_visual_slam
 
@@ -474,25 +382,22 @@ source install/setup.bash
 
 > If this fails at `gxf_isaac_image_flip` with `magic_enum::magic_enum not found`, the BFMC Dockerfile was not applied — check that the image key is `aarch64.ros2_humble.bfmc`.
 
-### 2.5 Build all BFMC localization packages
+### 2.2 First full run
+
+After the SLAM dependencies are built, use `run_localization.sh` for everything:
 
 ```bash
-colcon build --symlink-install \
-  --packages-select \
-    automobile_imu \
-    bfmc_car_description \
-    bfmc_isaac_visual_odom \
-    bfmc_state_odometry \
-    bfmc_odometry_fusion \
-    bfmc_gps_position \
-    bfmc_map_matching \
-    bfmc_global_localization \
-  --cmake-args -DBUILD_TESTING=OFF
-
-source install/setup.bash
+cd ~/workspaces/BFMC_Localization
+./run_localization.sh --normal-start
 ```
 
-### 2.6 Verify
+When the container shell opens:
+
+```bash
+sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
+```
+
+### 2.3 Verify
 
 ```bash
 ros2 pkg list | grep -E "automobile_imu|bfmc"
@@ -514,63 +419,50 @@ rm -rf \
   build/bfmc_global_localization install/bfmc_global_localization
 ```
 
-Then repeat steps 2.4 and 2.5.
+Then run `run_bfmc.sh` again.
 
 ---
 
 ## 3. Daily Workflow
 
-### 3.1 Pull and sync (on Jetson host)
+### 3.1 Pull and launch (on Jetson host)
 
 ```bash
 cd ~/workspaces/BFMC_Localization
 git pull
-
-~/sync_bfmc_to_isaac.sh
+./run_localization.sh --normal-start
 ```
+
+`run_localization.sh` re-syncs all packages and the Dockerfile, regenerates `run_bfmc.sh`, and starts the container.
 
 ### 3.2 Enter Docker
 
+When `run_localization.sh` drops to a shell, you are inside the container (`admin@ubuntu:/workspaces/isaac_ros-dev$`). Run:
+
 ```bash
-cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common
-./scripts/run_dev.sh -d ~/workspaces/isaac_ros-dev --docker_arg "--privileged"
+sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh
 ```
 
 To open a second terminal into the same running container:
 
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}"
-docker exec -it --user admin <container_name> bash
+docker exec -it isaac_ros_dev-aarch64-container bash
 ```
 
-### 3.3 Source ROS (every terminal)
+Then source ROS manually in that terminal:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /workspaces/isaac_ros-dev/install/setup.bash
+```
+
+### 3.3 Rebuild changed packages (inside container, without relaunching)
 
 ```bash
 cd /workspaces/isaac_ros-dev
 source /opt/ros/humble/setup.bash
-source install/setup.bash
-```
 
-### 3.4 IMU hardware permission
-
-Required once per container session, in the terminal that will run the IMU node:
-
-```bash
-sudo chmod 666 /dev/i2c-7
-```
-
-Verify BNO055 is detected:
-
-```bash
-i2cdetect -y -r 7
-# Expected:  20: -- -- -- -- -- -- -- -- 28 -- -- -- -- -- -- --
-```
-
-### 3.5 Rebuild changed packages
-
-Isaac SLAM dependencies are already built — only rebuild the BFMC packages that changed:
-
-```bash
 colcon build --symlink-install \
   --packages-select \
     automobile_imu \
@@ -596,7 +488,7 @@ colcon build --symlink-install \
 source install/setup.bash
 ```
 
-### 3.6 Run the full stack — master launch
+### 3.4 Run the full stack — master launch
 
 Runs all packages in dependency order (TF tree, IMU, visual odom, EKF, GPS, map matching, global localization):
 
@@ -620,7 +512,7 @@ ros2 launch bfmc_global_localization bfmc_localization.launch.py camera_mode:=rg
 ros2 launch bfmc_global_localization bfmc_localization.launch.py use_gps:=false camera_mode:=rgbd
 ```
 
-### 3.7 Run packages individually (manual order)
+### 3.5 Run packages individually (manual order)
 
 #### IMU driver
 ```bash
@@ -666,7 +558,7 @@ ros2 launch bfmc_global_localization global_ekf.launch.py
 ros2 launch bfmc_global_localization global_ekf.launch.py use_gps:=false
 ```
 
-### 3.8 Verify topics and TF
+### 3.6 Verify topics and TF
 
 Check all localization topics:
 

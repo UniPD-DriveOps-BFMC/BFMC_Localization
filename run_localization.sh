@@ -66,7 +66,7 @@ echo "╚═══════════════════════�
 echo "  GPS:         $USE_GPS"
 echo "  Camera mode: $CAMERA_MODE"
 echo "  Build:       $([ "$REBUILD" = true ] && echo yes || echo skipped)"
-echo "  Symlink:     $([ "$NO_SYNC" = true ] && echo no || echo yes)"
+echo "  Sync:        $([ "$NO_SYNC" = true ] && echo no || echo yes)"
 echo "  I2C bus:     $I2C_BUS"
 echo "  Start mode:  $START_MODE"
 echo ""
@@ -85,26 +85,25 @@ if ! docker info &>/dev/null; then
   exit 1
 fi
 
-# ── step 1: symlink ───────────────────────────────────────────────────────────
+# ── step 1: sync ─────────────────────────────────────────────────────────────
 if [ "$NO_SYNC" = false ]; then
-  echo "[1/3] Symlinking BFMC packages → isaac_ros-dev..."
-  # src packages — only BFMC-owned packages (automobile_* and bfmc_*)
+  echo "[1/3] Syncing BFMC packages → isaac_ros-dev..."
+  # Remove any stale symlinks before rsyncing (symlinks cannot be overwritten by rsync dirs)
   for pkg_path in "$BFMC_WS/src"/automobile_*/ "$BFMC_WS/src"/bfmc_*/; do
     [ -d "$pkg_path" ] || continue
     pkg=$(basename "$pkg_path")
     target="$ISAAC_WS/src/$pkg"
-    [ -d "$target" ] && [ ! -L "$target" ] && rm -rf "$target"
-    ln -sfn "$BFMC_WS/src/$pkg" "$target"
-    echo "  linked: src/$pkg"
+    [ -L "$target" ] && rm "$target"
+    rsync -a --delete "$pkg_path" "$ISAAC_WS/src/$pkg"
+    echo "  synced: src/$pkg"
   done
-  # Dockerfile so the OpenCV symlink fix reaches the image build
-  if [ -f "$BFMC_WS/docker/Dockerfile.bfmc" ]; then
-    ln -sf "$BFMC_WS/docker/Dockerfile.bfmc" "$ISAAC_WS/docker/Dockerfile.bfmc"
-    echo "  linked: docker/Dockerfile.bfmc"
-  fi
-  echo "  Symlink done."
+  # Sync Dockerfile so the OpenCV fix reaches the image build
+  mkdir -p "$ISAAC_WS/docker"
+  rsync -a "$BFMC_WS/docker/Dockerfile.bfmc" "$ISAAC_WS/docker/Dockerfile.bfmc"
+  echo "  synced: docker/Dockerfile.bfmc"
+  echo "  Sync done."
 else
-  echo "[1/3] Symlink skipped (--no-sync)."
+  echo "[1/3] Sync skipped (--no-sync)."
 fi
 
 # ── step 2: build command (optional) ─────────────────────────────────────────
