@@ -13,13 +13,15 @@
 #   --no-rebuild                 Skip rebuilding BFMC packages (default: builds)
 #   --no-sync                    Skip rsync to isaac_ros-dev (default: off)
 #   --i2c-bus      N             I2C bus for BNO055 IMU     (default: 7)
+#   --normal-start               Set EKF pose to start box (15.48, 3.83) (default)
+#   --random-start               Find nearest checkpoint from current fused position
 #   -h, --help                   Show this message
 #
 # Examples:
 #   ./run_localization.sh
-#   ./run_localization.sh --use-gps false
-#   ./run_localization.sh --no-rebuild --camera-mode rgbd
-#   ./run_localization.sh --no-sync --use-gps false
+#   ./run_localization.sh --normal-start
+#   ./run_localization.sh --random-start --use-gps false
+#   ./run_localization.sh --no-rebuild --camera-mode rgbd --normal-start
 # ============================================================
 set -euo pipefail
 
@@ -35,6 +37,7 @@ CAMERA_MODE="stereo"
 REBUILD=true
 NO_SYNC=false
 I2C_BUS=7
+START_MODE="normal"   # normal | random
 
 # ── argument parsing ─────────────────────────────────────────────────────────
 usage() {
@@ -43,12 +46,14 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --use-gps)      USE_GPS="$2";      shift 2 ;;
-    --camera-mode)  CAMERA_MODE="$2";  shift 2 ;;
-    --no-rebuild)   REBUILD=false;     shift   ;;
-    --no-sync)      NO_SYNC=true;      shift   ;;
-    --i2c-bus)      I2C_BUS="$2";      shift 2 ;;
-    -h|--help)      usage; exit 0      ;;
+    --use-gps)       USE_GPS="$2";      shift 2 ;;
+    --camera-mode)   CAMERA_MODE="$2";  shift 2 ;;
+    --no-rebuild)    REBUILD=false;     shift   ;;
+    --no-sync)       NO_SYNC=true;      shift   ;;
+    --i2c-bus)       I2C_BUS="$2";      shift 2 ;;
+    --normal-start)  START_MODE="normal"; shift  ;;
+    --random-start)  START_MODE="random"; shift  ;;
+    -h|--help)       usage; exit 0      ;;
     *) echo "ERROR: unknown option '$1'"; usage; exit 1 ;;
   esac
 done
@@ -63,6 +68,7 @@ echo "  Camera mode: $CAMERA_MODE"
 echo "  Build:       $([ "$REBUILD" = true ] && echo yes || echo skipped)"
 echo "  Sync:        $([ "$NO_SYNC" = true ] && echo no || echo yes)"
 echo "  I2C bus:     $I2C_BUS"
+echo "  Start mode:  $START_MODE"
 echo ""
 
 # ── pre-flight checks ────────────────────────────────────────────────────────
@@ -136,37 +142,53 @@ cd /workspaces/isaac_ros-dev
 
 echo "--- Sourcing ROS ---"
 source /opt/ros/humble/setup.bash
-source install/setup.bash
+source install/setup.bash 2>/dev/null || true
 
 echo "--- IMU hardware permission ---"
-sudo chmod 666 /dev/i2c-${I2C_BUS} 2>/dev/null && \
+chmod 666 /dev/i2c-${I2C_BUS} 2>/dev/null && \
   echo "  /dev/i2c-${I2C_BUS} ready" || \
   echo "  WARNING: could not chmod /dev/i2c-${I2C_BUS} (IMU may not work)"
 
 ${BUILD_CMD}
 
+source install/setup.bash
+
 echo ""
 echo "--- Launching localization stack ---"
-echo "    use_gps:=${USE_GPS}  camera_mode:=${CAMERA_MODE}"
+echo "    use_gps:=${USE_GPS}  camera_mode:=${CAMERA_MODE}  start:=${START_MODE}"
 echo ""
 ros2 launch bfmc_global_localization bfmc_localization.launch.py \
   use_gps:=${USE_GPS} \
-  camera_mode:=${CAMERA_MODE}
+  camera_mode:=${CAMERA_MODE} &
+LAUNCH_PID=\$!
+
+echo "--- Starting path planner (${START_MODE}-start) ---"
+python3 \$(ros2 pkg prefix bfmc_global_localization)/lib/bfmc_global_localization/path_planner.py \
+  --${START_MODE}-start &
+PLANNER_PID=\$!
+
+wait \$LAUNCH_PID
+kill \$PLANNER_PID 2>/dev/null || true
 INNEREOF
 )
 
+# ── step 3: write run script into workspace so it is visible inside the container
+SCRIPT_PATH="$ISAAC_WS/run_bfmc.sh"
+printf '%s\n' "$INNER_SCRIPT" > "$SCRIPT_PATH"
+chmod +x "$SCRIPT_PATH"
+echo "[3/3] Startup script written to:"
+echo "       $SCRIPT_PATH"
+echo "       (visible inside container at /workspaces/isaac_ros-dev/run_bfmc.sh)"
+echo ""
+
 # ── step 3: start docker ──────────────────────────────────────────────────────
-echo "[3/3] Starting Isaac ROS Docker container..."
+echo "Starting Isaac ROS Docker container..."
+echo ""
+echo "  ┌─ Once the shell opens, run: ───────────────────────────────┐"
+echo "  │  sudo bash /workspaces/isaac_ros-dev/run_bfmc.sh           │"
+echo "  └────────────────────────────────────────────────────────────┘"
 echo ""
 cd "$ISAAC_COMMON"
-
-# Try passing the command directly to run_dev.sh.
-# If run_dev.sh on this installation doesn't support command passthrough,
-# it will drop into interactive bash — in that case run manually:
-#   source /opt/ros/humble/setup.bash && source install/setup.bash
-#   sudo chmod 666 /dev/i2c-7
-#   ros2 launch bfmc_global_localization bfmc_localization.launch.py
 ./scripts/run_dev.sh \
   -d "$ISAAC_WS" \
-  --docker_arg "--privileged" \
-  -- bash -c "$INNER_SCRIPT"
+  --docker_arg "--privileged"

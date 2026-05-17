@@ -210,7 +210,7 @@ Runs on a **local machine** connected to the same LAN as the Jetson. Records all
 ./monitor_localization.sh --topic-publish
 
 # Custom domain ID (must match Jetson's ROS_DOMAIN_ID)
-./monitor_localization.sh --topic-publish --domain-id 42
+./monitor_localization.sh --topic-publish --domain-id 0
 
 # Custom bag save location
 ./monitor_localization.sh --bag-dir /media/usb/bfmc_bags

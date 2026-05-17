@@ -38,7 +38,13 @@ install(DIRECTORY
   launch
   config
   maps
+  scripts
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/path_planner.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
