@@ -3,7 +3,13 @@ FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    # Install OpenCV dev libraries explicitly first so the .so files are present
+    # before the ROS cv_bridge CMake config is evaluated at build time.
+    && apt-get install -y --no-install-recommends \
+        libopencv-dev \
+        libopencv-contrib-dev \
+    && apt-get install -y --no-install-recommends \
     ros-humble-robot-localization \
     ros-humble-tf2-tools \
     ros-humble-rqt-graph \
@@ -29,10 +35,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     nlohmann-json3-dev \
     libyaml-cpp-dev \
-    libopencv-dev \
     v4l-utils \
     usbutils \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # On aarch64 Ubuntu the OpenCV .so files land in /usr/lib/aarch64-linux-gnu/
+    # but OpenCVModules.cmake hardcodes /usr/lib/ — create forwarding symlinks.
+    && find /usr/lib/aarch64-linux-gnu -name "libopencv_*.so*" | while read src; do \
+         dst="/usr/lib/$(basename "$src")"; \
+         [ ! -e "$dst" ] && ln -sf "$src" "$dst"; \
+       done \
+    && ldconfig
 
 RUN git clone --depth 1 https://github.com/Neargye/magic_enum.git /tmp/magic_enum && \
     cmake -S /tmp/magic_enum -B /tmp/magic_enum/build -DCMAKE_INSTALL_PREFIX=/usr/local && \
