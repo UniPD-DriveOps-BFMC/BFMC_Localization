@@ -91,7 +91,9 @@ if [ "$NO_SYNC" = false ]; then
   # src packages — every directory directly under src/
   for pkg_path in "$BFMC_WS/src"/*/; do
     pkg=$(basename "$pkg_path")
-    ln -sfn "$pkg_path" "$ISAAC_WS/src/$pkg"
+    target="$ISAAC_WS/src/$pkg"
+    [ -d "$target" ] && [ ! -L "$target" ] && rm -rf "$target"
+    ln -sfn "$BFMC_WS/src/$pkg" "$target"
     echo "  linked: src/$pkg"
   done
   # Dockerfile so the OpenCV symlink fix reaches the image build
